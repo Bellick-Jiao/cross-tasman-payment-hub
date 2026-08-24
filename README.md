@@ -1,5 +1,6 @@
-# Cross-Tasman Payment 
-### 🚀 Cloud-Native Active-Active Integration Architecture (Auckland ⇆ Sydney)
+# 🌏 Cross-Tasman ISO 20022 Payment Hub
+### Enterprise Hybrid Integration Platform (IBM ACE v13, IBM MQ 9.4 & Spring Boot)
+> A cloud-native, event-driven payment integration gateway modernizing cross-border interbank settlement with IBM ACE/MQ, containerized on Docker/K8s.
 
 [![Platform](https://img.shields.io/badge/Platform-IBM%20MQ%209.4%20%7C%20ACE%2013-blue.svg)](https://www.ibm.com/products/app-connect)
 [![Spring Boot](https://img.shields.io/badge/Framework-Spring%20Boot%203.x%20%7C%20Spring%20JMS-green.svg)](https://spring.io/projects/spring-boot)
@@ -8,13 +9,34 @@
 
 This repository showcases a **production-ready, bank-grade integration solution** simulating a real-world cross-border payment routing gateway between New Zealand (Auckland) and Australia (Sydney). It demonstrates the seamless modernization of legacy banking integration stacks by marrying traditional **IBM MQ Clustered Messaging & App Connect Enterprise (ACE) v13** with modern **Cloud-Native Containerization, Spring Boot Microservices, OAuth2/JWT security, and Event-Driven Pub-Sub architectures**.
 
-This project is designed as an architectural POC aligning with enterprise standards for major financial institutions (e.g., Westpac, ANZ).
-
 ---
 
 ## 🗺️ Architectural Topology & Message Flow
 
-The system orchestrates a cross-border debit-to-credit ledger update across isolated regions, converting local payment requests into global SWIFT standard ISO 20022 XML formats and passing digital signatures securely along the asynchronous processing pipeline.
+![Cross-Tasman Payment Hub Architecture](./diagram1.png)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ```text
 Auckland Region (Active-Active Docker Cluster)                      Cross-Sea Transit                Sydney Region (K8s Host)
