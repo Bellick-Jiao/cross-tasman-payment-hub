@@ -1,4 +1,4 @@
-# Cross-Tasman ISO 20022 Payment Integration Gateway (CT-PIG)
+# Cross-Tasman Payment 
 ### 🚀 Cloud-Native Active-Active Integration Architecture (Auckland ⇆ Sydney)
 
 [![Platform](https://img.shields.io/badge/Platform-IBM%20MQ%209.4%20%7C%20ACE%2013-blue.svg)](https://www.ibm.com/products/app-connect)
