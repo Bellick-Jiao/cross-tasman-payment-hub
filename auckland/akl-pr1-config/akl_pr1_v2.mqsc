@@ -1,0 +1,39 @@
+* ====================================================================
+* IBM MQ 9.4 - Auckland Worker / Partial Repository Node 1 (QM_AKL_PR1)
+* ====================================================================
+
+* 1. Close Channel Authentication and Connection Authentication
+ALTER QMGR CONNAUTH(' ') CHLAUTH(DISABLED)
+ALTER AUTHINFO(DEV.AUTHINFO) AUTHTYPE(IDPWOS) CHCKCLNT(NONE)
+REFRESH SECURITY TYPE(CONNAUTH)
+REFRESH SECURITY TYPE(AUTHSERV)
+ALTER QMGR CCSID(1208)
+
+* 2. appoint DEADQ
+DEFINE QLOCAL(DEADQ) REPLACE
+ALTER QMGR DEADQ(DEADQ)
+
+* 3. Define Cluster Receiver Channel
+DEFINE CHANNEL(TO.QM_AKL_PR1) CHLTYPE(CLUSRCVR) TRPTYPE(TCP) +
+  CONNAME('mq-akl-pr1(1414)') CLUSTER(AKL_CLUSTER) +
+  DESCR('Cluster Receiver channel for QM_AKL_PR1') REPLACE
+
+* 4. Define Cluster Sender Channel (Pointing to Full Repository)
+DEFINE CHANNEL(TO.QM_AKL_FR) CHLTYPE(CLUSSDR) TRPTYPE(TCP) +
+  CONNAME('mq-akl-fr(1414)') CLUSTER(AKL_CLUSTER) +
+  DESCR('Cluster Sender channel pointing to FR') REPLACE
+
+* 5. Define Backout Queue for Poison Messages (金融级异常处理)
+DEFINE QLOCAL(PAYMENT.CLUSTER.IN.BOQ) DESCR('Backout Queue for Poison Messages') REPLACE
+
+* 6. Define Local Queue and Share it in the Cluster
+* This hosts the actual physical messages and will receive messages via round-robin.
+DEFINE QLOCAL(PAYMENT.CLUSTER.IN) CLUSTER(AKL_CLUSTER) BOTHRESH(3) BOQNAME('PAYMENT.CLUSTER.IN.BOQ') DESCR('Clustered Local Queue for Processing Payments') REPLACE
+
+* 1. 创建服务器连接通道 (SVRCONN)
+DEFINE CHANNEL('DEV.ADMIN.SVRCONN') CHLTYPE(SVRCONN) TRPTYPE(TCP) MCAUSER('mqm') REPLACE
+DEFINE QLOCAL(PAYMENT.TRANSFER.DEBIT.Q.TEST) CLUSTER(AKL_CLUSTER) DEFPSIST(YES) REPLACE
+DEFINE QL(ERROR.Q) REPLACE
+
+alter ql(PAYMENT.TRANSFER.DEBIT.Q) DEFBIND(NOTFIXED)
+

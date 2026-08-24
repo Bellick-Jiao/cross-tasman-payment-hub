@@ -1,0 +1,32 @@
+* ====================================================================
+* IBM MQ 9.4 - Auckland Gateway / Full Repository Queue Manager (QM_AKL_FR)
+* ====================================================================
+
+* 1. Close Channel Authentication and Connection Authentication
+ALTER QMGR CONNAUTH('') CHLAUTH(DISABLED)
+REFRESH SECURITY
+ALTER QMGR CCSID(1208)
+
+* 2. appoint DEADQ
+DEFINE QLOCAL(DEADQ) REPLACE
+ALTER QMGR DEADQ(DEADQ)
+
+* 3. Define Cluster and alter QMGR to act as Full Repository
+ALTER QMGR REPOS(AKL_CLUSTER)
+
+* Define Cluster Receiver Channel (Full Repository)
+DEFINE CHANNEL(TO.QM_AKL_FR) CHLTYPE(CLUSRCVR) TRPTYPE(TCP) +
+  CONNAME('mq-akl-fr(1414)') CLUSTER(AKL_CLUSTER) +
+  DESCR('Cluster Receiver channel for QM_AKL_FR') REPLACE
+
+* 4. Define Gateway Queue Alias (网关别名队列)
+* Clients (like Spring Boot) send payments to 'PAYMENT.TX.INBOUND'.
+* This queue manager acts as a gateway and doesn't host the actual physical queue.
+* Instead, it defines an Alias pointing to the clustered target queue 'PAYMENT.CLUSTER.IN'.
+* DEFBIND(NOTFIXED) ensures that workload balancing (round-robin) happens on a per-message basis.
+DEFINE QALIAS(PAYMENT.TX.INBOUND) TARGET(PAYMENT.CLUSTER.IN) +
+  DEFBIND(NOTFIXED) DESCR('Gateway Queue Alias for Clustered Payment Queue') REPLACE
+
+DEFINE CHANNEL('DEV.ADMIN.SVRCONN') CHLTYPE(SVRCONN) TRPTYPE(TCP) MCAUSER('mqm') REPLACE
+DEFINE QREMOTE(QM_ALK) REPLACE
+DEFINE QLOCAL(PAYMENT.CROSSBORDER.OUT) CLUSTER(AKL_CLUSTER) DEFPSIST(YES) REPLACE

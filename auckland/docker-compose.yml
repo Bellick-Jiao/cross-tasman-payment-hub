@@ -1,0 +1,141 @@
+version: '3.9'
+
+services:
+  # 1. Full Repository & Gateway Queue Manager
+  mq-akl-fr:
+    image: icr.io/ibm-messaging/mq:9.4.0.25-r2
+    container_name: mq-akl-fr
+    environment:
+      - LICENSE=accept
+      - MQ_QMGR_NAME=QM_AKL_FR
+      - MQ_APP_PASSWORD=Password99
+      - MQ_ADMIN_PASSWORD=Password99
+    ports:
+      - "1414:1414"
+      - "9443:9443"
+    volumes:
+#      - ./akl-fr-config/akl_fr_v2.mqsc:/etc/mqm/akl_fr_v2.mqsc
+      - mq_akl_fr_data:/var/mqm
+    networks:
+      - akl-cluster-net
+
+  # 2. Partial Repository Node 1
+  mq-akl-pr1:
+    image: icr.io/ibm-messaging/mq:9.4.0.25-r2
+    container_name: mq-akl-pr1
+    environment:
+      - LICENSE=accept
+      - MQ_QMGR_NAME=QM_AKL_PR1
+      - MQ_APP_PASSWORD=Password99
+    ports:
+      - "1415:1414"
+    volumes:
+#      - ./akl-pr1-config/akl_pr1_v2.mqsc:/etc/mqm/akl_pr1_v2.mqsc
+      - mq_akl_pr1_data:/var/mqm
+    networks:
+      - akl-cluster-net
+    depends_on:
+      - mq-akl-fr
+
+  # 3. Partial Repository Node 2
+  mq-akl-pr2:
+    image: icr.io/ibm-messaging/mq:9.4.0.25-r2
+    container_name: mq-akl-pr2
+    environment:
+      - LICENSE=accept
+      - MQ_QMGR_NAME=QM_AKL_PR2
+      - MQ_APP_PASSWORD=Password99
+    ports:
+      - "1416:1414"
+    volumes:
+#      - ./akl-pr2-config/akl_pr2_v2.mqsc:/etc/mqm/akl_pr2_v2.mqsc
+      - mq_akl_pr2_data:/var/mqm
+    networks:
+      - akl-cluster-net
+    depends_on:
+      - mq-akl-fr
+
+  # 4. PostgreSQL Database for Local Transaction Ledger & Accounts
+  integration-db:
+    image: postgres:15
+    container_name: integration-db
+    environment:
+      - POSTGRES_DB=payment_db
+      - POSTGRES_USER=payment_user
+      - POSTGRES_PASSWORD=payment_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./db-init/init.sql:/docker-entrypoint-initdb.d/init.sql # Autoloads init.sql
+    networks:
+      - akl-cluster-net
+
+  # 5. Redis Cache for Ultra-Low Latency Balance Querying
+  integration-cache:
+    image: redis:7-alpine
+    container_name: integration-cache
+    ports:
+      - "6379:6379"
+    volumes:
+      - cache_data:/data
+    networks:
+      - akl-cluster-net
+
+
+# ===========================================================================
+  # 6. ACE Server 1
+  # ===========================================================================
+  ace-server-pr1:
+    image: ace:13.0.8.0
+    container_name: ace-server-pr1
+    environment:
+      - LICENSE=accept
+      - ACE_SERVER_NAME=ACE_PR1
+      - CALL_HOME_CUSTOMER_NAME=TEST_DEV
+      - MQSI_VAULT_KEY=MySecretKey123
+    ports:
+      - "7601:7600"
+    volumes:
+      - ./ace-bars:/home/aceuser/initial-config/bars
+      - ./ace-vault/config/vault:/home/aceuser/ace-server/config/vault
+      # 🌟 动态重写挂载：直接挂载 PR1 的专属策略文件
+      - ./ace-policies/pr1/PaymentGateway_Policy:/home/aceuser/ace-server/run/PaymentGateway_Policy
+    networks:
+      - akl-cluster-net
+    depends_on:
+      - mq-akl-pr1
+
+  # ===========================================================================
+  # 7. ACE Server 2
+  # ===========================================================================
+  ace-server-pr2:
+    image: ace:13.0.8.0
+    container_name: ace-server-pr2
+    environment:
+      - LICENSE=accept
+      - ACE_SERVER_NAME=ACE_PR2
+      - CALL_HOME_CUSTOMER_NAME=TEST_DEV
+      - MQSI_VAULT_KEY=MySecretKey123
+    ports:
+      - "7602:7600"
+    volumes:
+      - ./ace-bars:/home/aceuser/initial-config/bars
+      - ./ace-vault/config/vault:/home/aceuser/ace-server/config/vault
+      # 🌟 动态重写挂载：直接挂载 PR2 的专属策略文件
+      - ./ace-policies/pr2/PaymentGateway_Policy:/home/aceuser/ace-server/run/PaymentGateway_Policy
+    networks:
+      - akl-cluster-net
+    depends_on:
+      - mq-akl-pr2
+
+volumes:
+  mq_akl_fr_data:
+  mq_akl_pr1_data:
+  mq_akl_pr2_data:
+  db_data:
+  cache_data:
+
+networks:
+  akl-cluster-net:
+    driver: bridge

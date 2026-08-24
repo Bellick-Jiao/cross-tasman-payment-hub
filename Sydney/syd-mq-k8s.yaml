@@ -1,0 +1,141 @@
+# ==============================================================================
+# Cross-Tasman ISO 20022 Payment Integration Gateway (CT-PIG)
+# Sydney Region: Kubernetes Deployment Manifests (QM_SYD)
+# Target Environment: VMware 3-Node Ubuntu K8s Cluster
+# ==============================================================================
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: payment-hub
+---
+# 1. Storage Class & Persistent Volume (Local HostPath for home lab simplicity)
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: mq-syd-pv
+  namespace: payment-hub
+  labels:
+    type: local
+spec:
+  storageClassName: manual
+  capacity:
+    storage: 5Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: "/mnt/mq-data" # Please make sure this directory exists on your Ubuntu node(s) or use your K8s storage class
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mq-syd-pvc
+  namespace: payment-hub
+spec:
+  storageClassName: manual
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+# 2. ConfigMap containing declarative MQSC configurations for Sydney
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mq-syd-config
+  namespace: payment-hub
+data:
+  syd.mqsc: |
+    * ==============================================================================
+    * IBM MQ 9.4 Declarative Configuration for Sydney Gateway (QM_SYD)
+    * ==============================================================================
+    
+    * Define Sydney local receiving queue for cross-border transactions
+    DEFINE QLOCAL(PAYMENT.CROSSBORDER.OUT) REPLACE
+    
+    * Define Cluster Queue for Sydney internal processing (optional future-proofing)
+    DEFINE QLOCAL(PAYMENT.SYD.INTERNAL) REPLACE
+    
+    * Define Receiver Channel to receive SWIFT/ISO 20022 messages from Auckland (QM_AKL)
+    DEFINE CHANNEL(AKL.TO.SYD) CHLTYPE(RCVR) TRPTYPE(TCP) REPLACE
+    
+    * Define channel auth rules to allow connection (Development environment setup)
+    SET CHLAUTH(AKL.TO.SYD) TYPE(ADDRESSMAP) ADDRESS('*') USERSRC(MAP) MCAUSER('mqm') ACTION(REPLACE)
+    SET CHLAUTH(SYSTEM.DEF.SVRCONN) TYPE(ADDRESSMAP) ADDRESS('*') USERSRC(MAP) MCAUSER('mqm') ACTION(REPLACE)
+    
+    * Refresh security to apply changes
+    REFRESH SECURITY TYPE(CONNAUTH)
+    
+    * Define TCP Listener on port 1414
+    DEFINE LISTENER(LSTR.1414) TRPTYPE(TCP) PORT(1414) CONTROL(QMGR) REPLACE
+    START LISTENER(LSTR.1414)
+---
+# 3. IBM MQ 9.4 StatefulSet / Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mq-syd
+  namespace: payment-hub
+  labels:
+    app: mq-syd
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mq-syd
+  template:
+    metadata:
+      labels:
+        app: mq-syd
+    spec:
+      containers:
+        - name: ibm-mq
+          image: icr.io/ibm-messaging/mq:9.4.0.25-r2
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 1414
+              name: mqchannel
+            - containerPort: 9443
+              name: mqconsole
+          env:
+            - name: LICENSE
+              value: "accept"
+            - name: MQ_QMGR_NAME
+              value: "QM_SYD"
+            - name: MQ_MQSC_FILE
+              value: "/etc/mqm/mqsc/syd.mqsc"
+          volumeMounts:
+            - name: mq-data
+              mountPath: /var/mqm
+            - name: mqsc-config
+              mountPath: /etc/mqm/mqsc
+      volumes:
+        - name: mq-data
+          persistentVolumeClaim:
+            claimName: mq-syd-pvc
+        - name: mqsc-config
+          configMap:
+            name: mq-syd-config
+            items:
+              - key: syd.mqsc
+                path: syd.mqsc
+---
+# 4. Service to expose MQ Listener and Console
+apiVersion: v1
+kind: Service
+metadata:
+  name: mq-syd-service
+  namespace: payment-hub
+spec:
+  type: NodePort
+  ports:
+    - port: 1414
+      targetPort: 1414
+      nodePort: 31414 # Exposes the MQ Listener to your Windows environment on port 31414
+      name: mqchannel
+    - port: 9443
+      targetPort: 9443
+      nodePort: 31443 # Exposes the Web Console on port 31443
+      name: mqconsole
+  selector:
+    app: mq-syd
