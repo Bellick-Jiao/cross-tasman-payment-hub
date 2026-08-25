@@ -6,24 +6,27 @@ This repository showcases a **production-ready, bank-grade integration solution*
 
 ---
 
-## Architectural Topology & Message Flow
+## Architectural Overview & Message Flow
 
 ![Cross-Tasman Payment Hub Architecture](./diagram1.png)
 
-## 📑 Table of Contents
-* [Dual-Tier Security Architecture](#-dual-tier-security-architecture--token-flow)
-  * [1. End-to-End Authentication Flow](#1-end-to-end-authentication--security-flow)
-  * [2. Tier 1: Local Microservice Auth (HS256)](#2-tier-1-local-microservice-auth-hs256-in-spring-boot)
-  * [3. Tier 2: Cross-Tasman Zero-Trust Transit (RS256)](#3-tier-2-cross-tasman-zero-trust-transit-rs256-asymmetric-cryptography)
-* [Hybrid ESB Architecture & Clustered Messaging Fabric](#️-hybrid-esb-architecture--clustered-messaging-fabric)
-  * [1. MQ Cluster Topology & Workload Balancing](#1-mq-cluster-topology--workload-balancing)
-  * [2. ESQL Transformation Pipeline (JSON to ISO 20022 XML)](#2-esql-transformation-pipeline-json-to-iso-20022-xml)
-  * [3. Topic-Based Pub-Sub & 1-to-3 Fan-Out Routing](#3-topic-based-pub-sub--1-to-3-fan-out-routing)
+## Table of Contents
+* [1. JWT-Based Security](#1-jwt-based-security)
+  * [1.1 Security Flow](#11-security-flow)
+  * [1.2 Tier 1: Local Microservice Auth (HS256)](#12-local-microservice-auth-hs256)
+  * [1.3 Tier 2: Sydney Zero-Trust Transit (RS256)](#13-sydney-zero-trust-transit-rs256)
+* [2. Hybrid ESB Architecture (IBM ACE & MQ)](#2-hybrid-esb-architecture-ibm-ace--mq)
+  * [2.1 MQ Cluster Architecture in Auckland](#21-mq-cluster-architecture-in-auckland)
+  * [2.2 ACE Message Flow](#22-ace-message-flow)
+  * [2.3 Topic-Based Pub-Sub & 1-to-3 Fan-Out Routing](#23-topic-based-pub-sub--1-to-3-fan-out-routing)
+* [3. Hybrid Cloud-Native Deployment (Docker & Kubernetes)](#3-hybrid-cloud-native-deployment-docker--kubernetes)
+  * [3.1 Auckland Region: Multi-Container Stack (Docker Compose)](#31-auckland-region-multi-container-stack-docker-compose)
+  * [3.2 Sydney Region: Enterprise Cloud-Native Pods (Kubernetes)](#32-sydney-region-enterprise-cloud-native-pods-kubernetes)
 * [Local Deployment & Verification](#-local-deployment--verification)
 
 ---
 
-## 1. Security Architecture with JWT Token Strategy & TLS/SSL Channel Encryption
+## 1. JWT-Based Security
 
 The payment hub implements a **Defense-in-Depth** security strategy, combining application-layer signature verification with transport-layer cryptographic channels:
 
@@ -63,7 +66,7 @@ The payment hub implements a **Defense-in-Depth** security strategy, combining a
 
 ---
 
-### 1.2 Auckland Local Microservice Auth (HS256 in Spring Boot)
+### 1.2 Local Microservice Auth (HS256)
 
 * **Algorithm**: HMAC with SHA-256 (Symmetric Encryption).
 * **Use Case**: High-performance, low-latency authentication between client gateways and local Spring Boot microservices inside the Auckland trust domain.
@@ -95,7 +98,7 @@ String jwt = Jwts.builder()
 
 ---
 
-### 1.3 Sydney Cross-Tasman Zero-Trust Transit (RS256 Asymmetric Cryptography)
+### 1.3 Sydney Zero-Trust Transit (RS256)
 
 * **Algorithm**: RSA Signature with SHA-256 (Asymmetric Encryption).
 * **Use Case**: The payload travels across untrusted inter-regional boundaries. Sydney verifies transaction authenticity **offline** using the public key, eliminating cross-border RPC calls or token-validation endpoints.
@@ -125,109 +128,129 @@ jmsTemplate.send("PAYMENT.INITIATED.QUEUE", session -> {
 });
 ```
 
-
 * **IBM ACE v13 Integration Node**: Preserves the token intact during message cleansing and ESQL translation into ISO 20022 XML:
 ```sql
 -- Preserve RS256 token in MQRFH2 header while transforming payload body
 SET OutputRoot.MQRFH2.usr.Auth_JWT = InputRoot.MQRFH2.usr.Auth_JWT;
 ```
 
-
 * **Sydney Receiver (Spring Boot)**: Extracts `MQRFH2.usr.Auth_JWT` and performs offline cryptographic verification using `sydney_public_key.pem` before updating the local ledger.
 
 
-## 2. Hybrid ESB Architecture & Clustered Messaging Fabric
+## 2. Hybrid ESB Architecture (IBM ACE & MQ)
 
-In modern enterprise integration terminology, **IBM ACE acts as the Integration Engine / ESB Transformation Layer** (mediating, parsing, transforming), while **IBM MQ functions as the Distributed Enterprise Messaging Backbone** (reliable transport, asynchronous decoupling, and clustering). Together, they form a resilient, production-grade **Hybrid ESB Platform**.
-
+This platform adopts an enterprise-grade **IBM ACE + IBM MQ Hybrid ESB pattern**, establishing a strict separation of concerns between **data transformation / business mediation** and **reliable transport / distributed clustering**:
+* **IBM ACE (App Connect Enterprise v13) — Integration & Transformation Engine**:
+  Acts as the intelligent processing core. It handles complex message format transformation (e.g., transforming REST/JSON payloads into canonical ISO 20022 XML `pacs.008`), business rule validation, message cleansing, RFH2 security header preservation, and topic publication.
+* **IBM MQ (v9.4) — Distributed Enterprise Messaging Backbone**:
+  Functions as the high-throughput, transactional messaging fabric. It provides Active-Active clustered workload balancing, guaranteed Once-and-Only-Once message delivery, resilient cross-border mTLS transmission channels, and dynamic 1-to-3 Topic Pub/Sub fan-out (decoupling core settlement from AML compliance and audit pipelines).
 ---
 
-### 2.1 MQ Cluster Topology & Workload Balancing
+### 2.1 MQ Cluster Architecture in Auckland
 
-The Auckland regional domain runs an **Active-Active IBM MQ 9.4 Cluster** structured with high availability and dynamic workload routing:
+The Auckland regional domain implements an **Active-Active IBM MQ 9.4 Cluster (`AKL_CLUSTER`)**, establishing a clean topological separation between **External Gateway Communication** and **Internal Business Processing**:
+
+* **Gateway & Full Repository (`QM_AKL_FR`)**:
+  * **External Edge Gateway**: Serves as the centralized inbound/outbound communication hub for Auckland, managing traffic with external domains — including cross-border transit to Sydney (`QM_SYD`), compliance AML scoring hosts, and regulatory audit archives.
+  * **Dynamic Workload Router**: Operates as the Full Repository (FR) maintaining cluster topology. It exposes the entry alias `PAYMENT.TX.INBOUND` configured with `DEFBIND(NOTFIXED)` to dynamically round-robin incoming payment traffic across the worker nodes on a per-message basis.
+* **Business Worker Nodes & Partial Repositories (`QM_AKL_PR1` & `QM_AKL_PR2`)**:
+  * **Parallel Clustered Processing**: Act as Partial Repositories (PR) hosting the physical local cluster queues (`PAYMENT.CLUSTER.IN`) to consume workload dispatched by the gateway.
+  * **Dedicated ACE Engine Pairing**: Each PR node is coupled with a dedicated containerized **IBM ACE v13 Server** (`ace-server-pr1` / `ace-server-pr2`) to execute message parsing, format transformation, and business validation in parallel with zero-downtime failover capability.
 
 ```
                      [ Spring Boot Ingress ]
                                 │
                          ▼ (JMS/TLS)
                 ┌─────────────────────────────────┐
-                │     QM_AKL_GW                   │
+                │   QM_AKL_FR (Gateway / FR)      │
                 └───────────────┬─────────────────┘
                                 │(Workload Balancing)
                   ┌─────────────┴─────────────┐ 
                   ▼                           ▼
       ┌─────────────────────────┐     ┌─────────────────────────┐
-      │ QM_AKL_PR1              │     │ QM_AKL_PR2              │
+      │ QM_AKL_PR1 (Worker/PR)  │     │ QM_AKL_PR2 (Worker/PR)  │
       │ • Cluster Queue (Local) │     │ • Cluster Queue (Local) │
       └────────────┬────────────┘     └────────────┬────────────┘
                    │                               │
                    ▼                               ▼
-         [ ACE Server Node 1 ]           [ ACE Server Node 2 ]
+         [ ACE Server PR1 ]              [ ACE Server PR2 ]
       (Additional Instances: 10)      (Additional Instances: 10)
 
 ```
-![Cross-Tasman Payment Hub](./toolkit.png)
 ---
 
-### 2.2 ESQL Transformation Pipeline (JSON to ISO 20022 XML)
+### 2.2 ACE Message Flow
 
-The ACE message flow (`JSON_to_ISO20022_Flow`) executes zero-loss data cleansing and protocol translation:
+The core transformation and mediation logic is hosted inside containerized **IBM App Connect Enterprise (ACE) v13** nodes. It processes incoming JSON payment requests, enriches and transforms them into standard **ISO 20022 `pacs.008.001.10` XML**, and publishes them to the MQ Pub-Sub topic tree.
 
-* **Payload Cleansing**: Parses incoming JSON and maps it into high-performance `XMLNSC` tree structures complying with SWIFT `pacs.008.001.10`.
-* **Header & Security Propagation**: Carries forward `MQRFH2.usr.Token-RS256` into the target message context.
-* **Encoding & Code Page Locking**: Forces `1208` (UTF-8) character encoding to prevent cross-platform character corruption during transit.
+![Cross-Tasman Payment Hub Message Flow](./toolkit.png)
+
+#### 1. End-to-End Flow Pipeline
+* **Inbound Consumption (`MQ Input`)**: Reads JSON payment messages dispatched by the Auckland MQ cluster (`PAYMENT.CLUSTER.IN`).
+* **ISO 20022 Transformation & Sanitization (`Compute Node`)**:
+  * **Schema Conformance**: Maps JSON payload fields into canonical **`pacs.008.001.10.xsd`** structure (`FIToFICstmrCdtTrf`, `GrpHdr`, `CdtTrfTxInf`, BIC identifiers).
+  * **Zero-Trust Security Preservation**: Extracts the RS256 JWT signature from the ingress request and preserves it inside `MQRFH2.usr.Auth_JWT` for downstream Sydney verification.
+  * **Character Set Normalization**: Enforces strict UTF-8 (`CCSID 1208`) across `MQMD` and `XMLNSC` domain properties to ensure cross-platform consistency.
+* **Topic Publication (`MQ Publication`)**: Emits the validated ISO 20022 XML payload to topic **`Payment/CrossBorder/Initiated`** for multi-consumer distribution.
+
+#### 2. Cloud-Native Decoupling via Policies (`policyType="MQEndpoint"`)
+* **Environment-Agnostic (`.bar`) Build**: The compiled application BAR contains zero hardcoded hostnames, ports, or credentials, adhering to 12-factor cloud principles.
+* **Dynamic Runtime Binding**: Target MQ connectivity is resolved dynamically via **`MQEndpoint` Policy files** (`QM_AKL_PR1_Policy.policyxml` / `QM_AKL_PR2_Policy.policyxml`).
+* **Containerized Deployment**: The identical `.bar` file is deployed to both `ace-server-pr1` and `ace-server-pr2` containers; distinct policies are dynamically volume-mounted (`./ace-policies/pr1` and `./ace-policies/pr2`) to establish connection to respective Partial Repositories.
+* **Encrypted Secret Management**: MQ credentials (`securityIdentity: aklMqAuth`) are decrypted strictly in-memory via `mqsivault` using runtime environment keys (`MQSI_VAULT_KEY`).
 
 ---
 
 ### 2.3 Topic-Based Pub-Sub & 1-to-3 Fan-Out Routing
 
-Once transformation completes, ACE publishes the ISO 20022 XML message to the central topic **`Payment/CrossBorder/Initiated`**. The IBM MQ Pub/Sub Engine instantly forks the payload into 3 independent subscriptions, fully isolating core settlement from auxiliary auditing and compliance pipelines:
+Once transformation completes, ACE publishes the ISO 20022 XML payload to the central MQ topic **`Payment/CrossBorder/Initiated`**. The IBM MQ Pub/Sub Engine instantly executes a **1-to-3 Fan-Out distribution**, fully decoupling real-time settlement from compliance and audit streaming:
+
 ```
              [ IBM ACE v13 Transformation Flow ]
                              │
-                             ▼ (Publish)
+                             ▼ (Publish ISO 20022 XML)
               [ Topic: Payment/CrossBorder/Initiated ]
                              │
     ┌────────────────────────┼────────────────────────┐
     ▼                        ▼                        ▼
 [ Subscription 1 ]       [ Subscription 2 ]       [ Subscription 3 ]
-(SUB_TO_SYDNEY)          (SUB_TO_AUDIT)           (SUB_TO_AML)
+ (SUB_TO_SYDNEY)          (SUB_TO_AUDIT)           (SUB_TO_AML)
     │                        │                        │
     ▼                        ▼                        ▼
 [ QALIAS / QR ]           [ QREMOTE ]              [ QREMOTE ]
 PAYMENT.TO.SYDNEY        PAYMENT.AUDIT.OUT        PAYMENT.AML.OUT
     │                        │                        │
-    ▼ (SDR/RCVR TLS)         ▼ (Dedicated Sender)     ▼ (Dedicated Sender)
-[ QM_SYD (Sydney) ]     [ Audit Remote Host ]    [ AML Scoring Host ]
-
+    ▼ (mTLS SDR/RCVR Channel)▼ (Dedicated Sender)     ▼ (Dedicated Sender)
+[ QM_SYD (Sydney) ]     [ Audit System ]         [ AML Scoring Engine ]
 ```
 
-* **Core Settlement (`SUB_TO_SYDNEY`)**: Resolves to a Remote Queue Definition (`QR`) that binds to the physical cross-sea Sender-Receiver channel (`QM_AKL_GW -> QM_SYD`) over TCP/TLS port 31414.
-* **Compliance & AML Scoring (`SUB_TO_AML`)**: Asynchronously routes a replicated copy to the dedicated Anti-Money Laundering engine via Remote Queue, ensuring transaction evaluation occurs without blocking core processing.
-* **Regulatory Audit Trail (`SUB_TO_AUDIT`)**: Delivers an immutable record to the Audit System queue for ingestion into the enterprise log archive (ELK / Splunk).
+#### Key Architectural Benefits
+* **Core Settlement (`SUB_TO_SYDNEY`)**: Resolves to a Remote Queue Definition (`QR`) routed across a dedicated cross-sea **mTLS Sender-Receiver Channel (`QM_AKL_FR -> QM_SYD`)** over TCP port 31414.
+* **Non-Blocking AML Compliance (`SUB_TO_AML`)**: Asynchronously feeds transactions into the Anti-Money Laundering scoring engine. Even under high AML processing latency or scheduled maintenance downtime, core interbank settlement continues unimpeded.
+* **Immutable Audit Trail (`SUB_TO_AUDIT`)**: Streams transaction records directly into enterprise log archives (Splunk / ELK) for banking regulatory compliance.
+* **Zero-Impact Extensibility**: New consumers (such as Real-Time Fraud Detection or FX Rate Analytics) can be attached purely through new MQ subscription definitions without modifying existing ACE message flows.
 
-```
+---
 
+## 3. Hybrid Cloud-Native Deployment (Docker & Kubernetes)
 
+The platform demonstrates a realistic **Hybrid Multi-Region deployment model**, bridging an on-premises / edge-like multi-container environment in **Auckland (Docker Compose)** with a cloud-native enterprise cluster in **Sydney (Kubernetes)**.
 
+### 3.1 Auckland Region: Multi-Container Stack (Docker Compose)
 
+The Auckland domain is fully containerized via `docker-compose.yml` on a dedicated bridge network (`akl-cluster-net`), providing an active-active integration topology:
 
+* **Active-Active MQ Cluster**: Deploys 3 distinct queue managers (`mq-akl-fr`, `mq-akl-pr1`, `mq-akl-pr2`) to simulate enterprise clustering and workload balancing.
+* **Dual ACE Integration Servers**: Runs `ace-server-pr1` and `ace-server-pr2` (IBM ACE v13), dynamically mounting policies (`./ace-policies/pr1` & `./ace-policies/pr2`) and compiled BAR files.
+* **Ledger & Cache Tier**: Houses `PostgreSQL 15` for local transaction journals and `Redis 7` for ultra-low latency cache checks.
 
-### 2. Event-Driven Architecture (EDA) & Publish-Subscribe Fan-out
-Instead of tight point-to-point queue bindings, the Auckland ACE engine issues events to a logic topic: `Payment/CrossBorder/Initiated`. Within IBM MQ, we configure a **3-way Pub-Sub subscription cluster**:
-*   **Core Business Pathway (`SUB_TO_SYDNEY`)**: Listens to the topic and routes messages to an Alias Queue (`PAYMENT.TO.SYDNEY.ALIAS`), which is linked to a Clustered Remote Queue (`PAYMENT.CROSSBORDER.OUT`) bound for Australia.
-*   **Compliance Pipeline (`SUB_TO_AML`)**: Intercepts payment records simultaneously, routing them to `PAYMENT.AML.Q` for real-time compliance check by a rule engine.
-*   **Audit Pipeline (`SUB_TO_AUDIT`)**: Replicates raw payloads into `PAYMENT.AUDIT.Q` for indexing in ELK (Elasticsearch, Logstash, Kibana) without adding latency to the payment pipeline.
+---
 
-### 3. Active-Active IBM MQ & ACE High-Availability Cluster
-*   **MQ Clustered Repository Layout**: Auckland utilizes `QM_AKL_FR` as a Full Repository (Gateway) and `QM_AKL_PR1`/`QM_AKL_PR2` as Partial Repositories. Ingress Spring Boot traffic is dynamically balanced across PR1 and PR2.
-*   **Automatic Workload Routing**: If `PR1` fails, traffic is automatically routed to `PR2`. If the remote link to Sydney is disrupted, MQ automatically queues messages on the Auckland Gateway transmission queue (`XMITQ`), guaranteeing **Zero-Data-Loss**.
-*   **Poison Message Handling**: Configured with a dedicated Backout Queue (`PAYMENT.CLUSTER.IN.BOQ`) and a threshold of `3`. Problematic messages are gracefully isolated to prevent MQ consumer starvation.
+### 3.2 Sydney Region: Enterprise Cloud-Native Pods (Kubernetes)
 
-### 4. Zero-Plaintext Secret Management (`mqsivault` & Policies)
-Aligned with bank-grade security audits (e.g., PCI-DSS):
-*   ACE integration nodes use an encrypted vault (`config/vault`) to store database and MQ credentials.
-*   Instead of hardcoding connection strings and passwords inside the BAR file, we implement decoupled **`MQConnection` Policies** (`MqAklPolicy.policyxml`).
-*   Passwords are encrypted in local JSON descriptors (`bXEvYWtsTXFBdXRo.json`) and decrypted in-memory inside the Docker container during startup using the `MQSI_VAULT_KEY` environment variable.
+The Sydney domain models a bank-grade production cloud environment managed declaratively via Kubernetes manifests (`syd-mq-k8s.yaml`):
 
-
+* **Isolated Namespace (`payment-hub`)**: Enforces multi-tenant resource boundaries and security policies.
+* **Stateful Resilience (PV / PVC)**: Binds a `5Gi` PersistentVolume to `/var/mqm` to ensure zero message loss across Pod evictions or rolling restarts.
+* **GitOps Configuration (`ConfigMap`)**: Injects `syd.mqsc` declaratively into the MQ container at startup, eliminating manual configuration drift.
+* **Cross-Border Service Exposure (`NodePort / LoadBalancer`)**: Exposes MQ listener port `1414` externally as NodePort `31414` (and Web Console as `31443`), enabling secure mTLS ingress from Auckland.
