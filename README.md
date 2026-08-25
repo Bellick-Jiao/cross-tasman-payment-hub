@@ -243,7 +243,7 @@ The Auckland domain is fully containerized via `docker-compose.yml` on a dedicat
 * **Active-Active MQ Cluster**: Deploys 3 distinct queue managers (`mq-akl-fr`, `mq-akl-pr1`, `mq-akl-pr2`) to simulate enterprise clustering and workload balancing.
 * **Dual ACE Integration Servers**: Runs `ace-server-pr1` and `ace-server-pr2` (IBM ACE v13), dynamically mounting policies (`./ace-policies/pr1` & `./ace-policies/pr2`) and compiled BAR files.
 * **Ledger & Cache Tier**: Houses `PostgreSQL 15` for local transaction journals and `Redis 7` for ultra-low latency cache checks.
-
+![Cross-Tasman Payment Hub Message Flow](./docker-ps.png)
 ---
 
 ### 3.2 Sydney Region: Enterprise Cloud-Native Pods (Kubernetes)
