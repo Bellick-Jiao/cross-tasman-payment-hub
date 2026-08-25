@@ -1,0 +1,47 @@
+### 环境变量配置
+@authUrl = http://localhost:8081
+@accountUrl = http://localhost:8082
+@transferHost = http://localhost:8083
+@testAccountNo = AU-123456789
+
+### 1. 先调用 auth-service (8081) 登录并捕获 Token
+POST {{authUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "username": "tom",
+  "password": "tom123456"
+}
+
+> {%
+    client.global.set("authToken", response.body.token);
+%}
+
+### 2. 再调用 account-service (8082) 查询余额
+GET {{accountUrl}}/api/v1/accounts/{{testAccountNo}}/balance
+Authorization: Bearer {{authToken}}
+Accept: application/json
+
+### 3. 账户入账 / 充值 (POST Credit)
+# 对应 AccountController 的 creditAccount 方法
+POST {{accountUrl}}/api/v1/accounts/credit
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "accountNo": "{{testAccountNo}}",
+  "amount": 2500.50
+}
+
+### 4. 发起转账交易 (Transfer Service -> 扣款 + 投递 IBM MQ)
+# @name transfer
+POST {{transferHost}}/api/v1/payments/transfer
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "senderAccount": "{{    testAccountNo}}",
+  "receiverAccount": "AU87654321",
+  "amount": 25.00,
+  "currency": "NZD"
+}

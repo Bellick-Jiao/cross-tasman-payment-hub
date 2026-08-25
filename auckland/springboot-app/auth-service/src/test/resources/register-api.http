@@ -1,0 +1,18 @@
+### 1. user regist
+POST http://localhost:8081/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "username": "tom",
+  "password": "tom123456",
+  "email": "tom@gmail.com"
+}
+
+### 2. login
+POST http://localhost:8081/api/v1/auth/login
+Content-Type: application/json
+
+{
+"username": "tom",
+"password": "tom123456"
+}
