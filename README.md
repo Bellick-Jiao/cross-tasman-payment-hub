@@ -184,7 +184,7 @@ The Auckland regional domain implements an **Active-Active IBM MQ 9.4 Cluster (`
 The core transformation and mediation logic is hosted inside containerized **IBM App Connect Enterprise (ACE) v13** nodes. It processes incoming JSON payment requests, enriches and transforms them into standard **ISO 20022 `pacs.008.001.10` XML**, and publishes them to the MQ Pub-Sub topic tree.
 
 ![Cross-Tasman Payment Hub Message Flow](./toolkit.png)
-
+![Cross-Tasman Payment Hub Message Flow](./toolkit2.png)
 #### 1. End-to-End Flow Pipeline
 * **Inbound Consumption (`MQ Input`)**: Reads JSON payment messages dispatched by the Auckland MQ cluster (`PAYMENT.CLUSTER.IN`).
 * **ISO 20022 Transformation & Sanitization (`Compute Node`)**:

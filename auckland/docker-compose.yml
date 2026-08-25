@@ -99,7 +99,6 @@ services:
     volumes:
       - ./ace-bars:/home/aceuser/initial-config/bars
       - ./ace-vault/config/vault:/home/aceuser/ace-server/config/vault
-      # 🌟 动态重写挂载：直接挂载 PR1 的专属策略文件
       - ./ace-policies/pr1/PaymentGateway_Policy:/home/aceuser/ace-server/run/PaymentGateway_Policy
     networks:
       - akl-cluster-net
@@ -122,7 +121,6 @@ services:
     volumes:
       - ./ace-bars:/home/aceuser/initial-config/bars
       - ./ace-vault/config/vault:/home/aceuser/ace-server/config/vault
-      # 🌟 动态重写挂载：直接挂载 PR2 的专属策略文件
       - ./ace-policies/pr2/PaymentGateway_Policy:/home/aceuser/ace-server/run/PaymentGateway_Policy
     networks:
       - akl-cluster-net
