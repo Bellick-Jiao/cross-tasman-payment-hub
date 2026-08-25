@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<policies>
+    <policy policyName="QM_AKL_PR1_Policy" policyType="MQEndpoint" policyTemplate="" version="1.0.0">
+        <connection>CLIENT</connection>
+        <destinationQueueManagerName>QM_AKL_PR1</destinationQueueManagerName>
+        <queueManagerHostname>mq-akl-pr1</queueManagerHostname>
+        <listenerPortNumber>1414</listenerPortNumber>
+        <channelName>DEV.APP.SVRCONN</channelName>
+        <securityIdentity>aklMqAuth</securityIdentity>
+        <useSSL>false</useSSL>
+        <reconnectOption>default</reconnectOption>
+    </policy>
+</policies>

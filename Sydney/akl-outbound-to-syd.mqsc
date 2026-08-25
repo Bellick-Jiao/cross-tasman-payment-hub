@@ -1,0 +1,30 @@
+* ==============================================================================
+* IBM MQ 9.4 - Auckland Gateway Configuration for Outbound Sydney Route (QM_AKL_FR)
+* Run this on QM_AKL_FR to route cross-border payments to Sydney!
+* ==============================================================================
+
+* 1. Define Transmission Queue for Sydney
+* This queue holds messages temporarily before they are transmitted to Sydney.
+DEFINE QLOCAL(QM_SYD) USAGE(XMITQ) REPLACE
+
+* 2. Define Remote Queue Definition
+* When Spring Boot or ACE sends to PAYMENT.CROSSBORDER.OUT on Auckland Gateway,
+* MQ will automatically route it to QM_SYD's PAYMENT.CROSSBORDER.OUT via the transmission queue.
+DEFINE QREMOTE(PAYMENT.CROSSBORDER.OUT) +
+  RNAME(PAYMENT.CROSSBORDER.OUT) +
+  RQMNAME(QM_SYD) +
+  XMITQ(QM_SYD) +
+  REPLACE
+
+* 3. Define Sender Channel to Sydney
+* REPLACE <VMWARE_UBUNTU_NODE_IP> with the IP address of one of your Ubuntu VM nodes.
+* Note: Port 31414 is the NodePort exposed by our Kubernetes service.
+DEFINE CHANNEL(AKL.TO.SYD) CHLTYPE(SDR) TRPTYPE(TCP) +
+  CONNAME('YOUR_VMWARE_UBUNTU_NODE_IP(31414)') +
+  XMITQ(QM_SYD) +
+  DESCR('Sender Channel to Sydney K8s MQ Instance') +
+  REPLACE
+
+* 4. Start the Sender Channel
+* Once Sydney MQ is running on K8s and the Node IP is configured, start the channel!
+* START CHANNEL(AKL.TO.SYD)
